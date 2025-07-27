@@ -13,6 +13,7 @@ import { generateId, number_formate, round2 } from "@/lib/utils";
 import ImageHover from "./image-hover";
 import Rating from "./rating";
 import ProductPrice from "./product-price";
+import AddToCart from "./add-to-cart";
 
 const ProductCard = ({
   product,
@@ -77,6 +78,28 @@ const ProductCard = ({
     </div>
   );
 
+  const AddCartButton = () => {
+    return (
+      <div className="w-full text-center">
+        <AddToCart
+          item={{
+            clientId: generateId(),
+            product: product._id,
+            size: product.sizes[0],
+            color: product.colors[0],
+            countInStock: product.countInStock,
+            name: product.name,
+            slug: product.slug,
+            category: product.category,
+            price: round2(product.price),
+            quantity: 1,
+            image: product.images[0],
+          }}
+        />
+      </div>
+    );
+  };
+
   return hideBorder ? (
     <div className="flex flex-col">
       <ProductImage />
@@ -85,7 +108,7 @@ const ProductCard = ({
           <div className="p-3 flex-1 text-center">
             <ProductDetails />
           </div>
-          {/* {!hideAddToCart && <AddCartButton />} */}
+          {!hideAddToCart && <AddCartButton />}
         </>
       )}
     </div>
@@ -100,7 +123,7 @@ const ProductCard = ({
             <ProductDetails />
           </CardContent>
           <CardFooter className="p-3">
-            {/* {!hideAddToCart && <AddCartButton />} */}
+            {!hideAddToCart && <AddCartButton />}
           </CardFooter>
         </>
       )}

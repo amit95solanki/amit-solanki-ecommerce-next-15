@@ -11,7 +11,7 @@ import ProductGallery from "@/components/shared/product/product-gallery";
 import ProductSlider from "@/components/shared/product/product-slider";
 // import AddToBrowsingHistory from "@/components/shared/product/add-to-browsing-history";
 // import BrowsingHistoryList from "@/components/shared/browsing-history-list";
-// import AddToCart from "@/components/shared/product/add-to-cart";
+import AddToCart from "@/components/shared/product/add-to-cart";
 import { generateId, round2 } from "@/lib/utils";
 import { Separator } from "@radix-ui/react-select";
 import AddToBrowsingHistory from "@/components/shared/product/add-to-browsing-history";
@@ -125,7 +125,7 @@ export default async function ProductDetails(props: {
                 )}
               </CardContent>
             </Card>
-            {/* 
+
             {product.countInStock != 0 && (
               <AddToCart
                 item={{
@@ -142,7 +142,7 @@ export default async function ProductDetails(props: {
                   color: color || product.colors[0],
                 }}
               />
-            )} */}
+            )}
           </div>
         </div>
       </section>

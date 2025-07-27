@@ -8,7 +8,7 @@ import {
   getAllCategory,
   getProductByTag,
   getProductForCard,
-} from "@/lib/actions/order-action";
+} from "@/lib/actions/product.actions";
 import { toSlug } from "@/lib/utils";
 const Home = async () => {
   const categories = (await getAllCategory()).slice(0, 4);

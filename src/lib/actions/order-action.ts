@@ -1,200 +1,184 @@
-"use server"
+'use server'
 
-import { PAGE_SIZE } from "../constant"
+import { Cart, OrderItem, ShippingAddress } from "@/types"
+import { formateError, round2 } from "../utils"
+import { AVAILABLE_DELIVERY_DATES, PAGE_SIZE } from "../constant"
 import { connectToDatabase } from "../db"
-import Product, { IProduct } from "../db/models/product.model"
+// import { auth } from "@/auth"
+import { OrderInputSchema } from "../validator"
+import Order, { IOrder } from "../db/models/order.model"
+// import { paypal } from "../paypal"
+import { revalidatePath } from "next/cache"
+// import { sendPurchaseReceipt } from "../../../emails"
 
 
-export async function getAllCategory(){
-    await connectToDatabase()
-    const category = await Product.find({isPublished: true}).distinct('category')
-    return category
-}
-
-export async function getProductForCard({tag, limit=4}:{
-    tag: string,
-    limit?: number
-}){
-    await connectToDatabase()
-    const product = await Product.find(
-        { tags:{ $in:[tag] }, isPublished: true },
-        {
-            name: 1,
-            href:{ $concat: ['/product/', '$slug'] },
-            image:{ $arrayElemAt:['$images', 0] }
-        }
-    ).sort({createdAt: 'desc'}).limit(limit)
-
-    return JSON.parse(JSON.stringify(product)) as {
-        name: string,
-        href: string,
-        image: string
-    }[]
-}
-
-export async function getProductByTag({tag, limit=10}:{
-    tag: string,
-    limit?: number
-}){
-    await connectToDatabase()
-    const product = await Product.find({
-        tags: {$in: [tag]},
-        isPublished: true
-    }).sort({createdAt: 'desc'}).limit(limit)
-
-    return JSON.parse(JSON.stringify(product)) as IProduct[]
-}
-
-
-export async function getProductBySlug(slug: string){
-    await connectToDatabase()
-    const product = await Product.findOne({slug, isPublished: true})
-    if(!product){
-        throw new Error('Product not found')
-    }
-
-    return JSON.parse(JSON.stringify(product)) as IProduct
-}
-
-export async function getRelatedProductByCategory({
-    category,
-    productId,
-    limit = PAGE_SIZE,
-    page = 1
-}:{ category: string, productId: string, limit?: number, page: number }){
-    await connectToDatabase()
-
-    const skipSize = (Number(page) -1) * limit
-
-    const condition = {
-        isPublished: true,
-        category,
-        _id: {$ne: productId}
-    }
-
-    const products = await Product.find(condition)
-    .sort({numSales: 'desc'})
-    .skip(skipSize)
-    .limit(limit)
-
-    const productCount = await Product.countDocuments(condition)
-
-    const productData = {
-        data: JSON.parse(JSON.stringify(products)) as IProduct[],
-        totalPage: Math.ceil(productCount/limit)
-    }
-
-    return productData;
-
-}
-
-// GET ALL PRODUCTS
-export async function getAllProducts({
-    query,
-    limit,
-    page,
-    category,
-    tag,
-    price,
-    rating,
-    sort,
+export const calculateDeliveryDateAndPrice = async ({
+    items,
+    shippingAddress,
+    deliveryDateIndex,
   }: {
-    query: string
-    category: string
-    tag: string
-    limit?: number
-    page: number
-    price?: string
-    rating?: string
-    sort?: string
-  }) {
-    limit = limit || PAGE_SIZE
+    items: OrderItem[],
+    shippingAddress?: ShippingAddress,
+    deliveryDateIndex?: number
+  }) => {
+    const itemsPrice = round2(
+        items.reduce((acc, item) => acc + item.price * item.quantity, 0)
+      )
+      const deliveryDate = AVAILABLE_DELIVERY_DATES[deliveryDateIndex === undefined ? AVAILABLE_DELIVERY_DATES.length - 1
+      : deliveryDateIndex]
+
+      const shippingPrice = !shippingAddress || !deliveryDate ? undefined : deliveryDate.freeShippingMinPrice > 0 && itemsPrice >= deliveryDate.freeShippingMinPrice ? 0 : deliveryDate.shippingPrice
+
+      const taxPrice = !shippingAddress ? undefined : round2(itemsPrice * 0.15)
+      const totalPrice = round2(
+        itemsPrice +
+          (shippingPrice ? round2(shippingPrice) : 0) +
+          (taxPrice ? round2(taxPrice) : 0)
+      )
+      return {
+        AVAILABLE_DELIVERY_DATES,
+        deliveryDateIndex: deliveryDateIndex === undefined ? AVAILABLE_DELIVERY_DATES.length - 1 : deliveryDateIndex,
+        itemsPrice,
+        shippingPrice,
+        taxPrice,
+        totalPrice,
+      }
+}
+
+export const createOrder = async(clientSideCart: Cart) => {
+  try {
     await connectToDatabase()
-  
-    const queryFilter =
-      query && query !== 'all'
-        ? {
-            name: {
-              $regex: query,
-              $options: 'i',
-            },
-          }
-        : {}
-    const categoryFilter = category && category !== 'all' ? { category } : {}
-    const tagFilter = tag && tag !== 'all' ? { tags: tag } : {}
-  
-    const ratingFilter =
-      rating && rating !== 'all'
-        ? {
-            avgRating: {
-              $gte: Number(rating),
-            },
-          }
-        : {}
-    // 10-50
-    const priceFilter =
-      price && price !== 'all'
-        ? {
-            price: {
-              $gte: Number(price.split('-')[0]),
-              $lte: Number(price.split('-')[1]),
-            },
-          }
-        : {}
-    const order: Record<string, 1 | -1> =
-      sort === 'best-selling'
-        ? { numSales: -1 }
-        : sort === 'price-low-to-high'
-          ? { price: 1 }
-          : sort === 'price-high-to-low'
-            ? { price: -1 }
-            : sort === 'avg-customer-review'
-              ? { avgRating: -1 }
-              : { _id: -1 }
-    const isPublished = { isPublished: true }
-    const products = await Product.find({
-      ...isPublished,
-      ...queryFilter,
-      ...tagFilter,
-      ...categoryFilter,
-      ...priceFilter,
-      ...ratingFilter,
-    })
-      .sort(order)
-      .skip(limit * (Number(page) - 1))
-      .limit(limit)
-      .lean()
-  
-    const countProducts = await Product.countDocuments({
-      ...queryFilter,
-      ...tagFilter,
-      ...categoryFilter,
-      ...priceFilter,
-      ...ratingFilter,
-    })
-    return {
-      products: JSON.parse(JSON.stringify(products)) as IProduct[],
-      totalPages: Math.ceil(countProducts / limit),
-      totalProducts: countProducts,
-      from: limit * (Number(page) - 1) + 1,
-      to: limit * (Number(page) - 1) + products.length,
-    }
+    // const session = await auth()
+    // if (!session) throw new Error('User not authenticated')
+    // // recalculate price and delivery date on the server
+    // const createdOrder = await createOrderFromCart(
+    //   clientSideCart,
+    //   session.user.id!
+    // )
+    // return {
+    //   success: true,
+    //   message: 'Order placed successfully',
+    //   data: { orderId: createdOrder._id.toString() },
+    // }
+  } catch (error) {
+    return { success: false, message: formateError(error) }
   }
-  
-  export async function getAllTags() {
-    const tags = await Product.aggregate([
-      { $unwind: '$tags' },
-      { $group: { _id: null, uniqueTags: { $addToSet: '$tags' } } },
-      { $project: { _id: 0, uniqueTags: 1 } },
-    ])
-    return (
-      (tags[0]?.uniqueTags
-        .sort((a: string, b: string) => a.localeCompare(b))
-        .map((x: string) =>
-          x
-            .split('-')
-            .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-            .join(' ')
-        ) as string[]) || []
-    )
+}
+
+export const createOrderFromCart = async (
+  clientSideCart: Cart,
+  userId: string
+) => {
+  const cart = {
+    ...clientSideCart,
+    ...calculateDeliveryDateAndPrice({
+      items: clientSideCart.items,
+      shippingAddress: clientSideCart.shippingAddress,
+      deliveryDateIndex: clientSideCart.deliveryDateIndex,
+    }),
   }
+
+  const order = OrderInputSchema.parse({
+    user: userId,
+    items: cart.items,
+    shippingAddress: cart.shippingAddress,
+    paymentMethod: cart.paymentMethod,
+    itemsPrice: cart.itemsPrice,
+    shippingPrice: cart.shippingPrice,
+    taxPrice: cart.taxPrice,
+    totalPrice: cart.totalPrice,
+    expectedDeliveryDate: cart.expectedDeliveryDate,
+  })
+  return await Order.create(order)
+}
+
+export async function createPayPalOrder(orderId: string){
+  await connectToDatabase()
+  try {
+    const order = await Order.findById(orderId)
+    // if (order) {
+    //   const paypalOrder = await paypal.createOrder(order.totalPrice)
+    //   order.paymentResult = {
+    //     id: paypalOrder.id,
+    //     email_address: '',
+    //     status: '',
+    //     pricePaid: '0',
+    //   }
+    //   await order.save()
+    //   return {
+    //     success: true,
+    //     message: 'PayPal order created successfully',
+    //     data: paypalOrder.id,
+    //   }
+    // } else {
+    //   throw new Error('Order not found')
+    // }
+  } catch (err) {
+    return { success: false, message: formateError(err) }
+  }
+}
+
+export async function approvePayPalOrder(orderId: string, data:{orderID: string}){
+  await connectToDatabase()
+  try {
+    const order = await Order.findById(orderId).populate('user', 'email')
+    if (!order) throw new Error('Order not found')
+
+    // const captureData = await paypal.capturePayment(data.orderID)
+    // if (
+    //   !captureData ||
+    //   captureData.id !== order.paymentResult?.id ||
+    //   captureData.status !== 'COMPLETED'
+    // )
+    //   throw new Error('Error in paypal payment')
+    // order.isPaid = true
+    // order.paidAt = new Date()
+    // order.paymentResult = {
+    //   id: captureData.id,
+    //   status: captureData.status,
+    //   email_address: captureData.payer.email_address,
+    //   pricePaid:
+    //     captureData.purchase_units[0]?.payments?.captures[0]?.amount?.value,
+    // }
+    // await order.save()
+    // await sendPurchaseReceipt({ order })
+    // revalidatePath(`/account/orders/${orderId}`)
+    // return {
+    //   success: true,
+    //   message: 'Your order has been successfully paid by PayPal',
+    // }
+  } catch (err) {
+    return { success: false, message: formateError(err) }
+  }
+}
+
+export async function getOrderById(orderId: string): Promise<IOrder> {
+  await connectToDatabase()
+  const order = await Order.findById(orderId)
+  return JSON.parse(JSON.stringify(order))
+}
+
+export async function getOrders({limit, page}:{
+  limit?: number,
+  page: number
+}){
+  limit = limit || PAGE_SIZE
+  await connectToDatabase()
+  // const session = await auth()
+  // if (!session) {
+  //   throw new Error('User is not authenticated')
+  // }
+  // const skipAmount = (Number(page) - 1) * limit
+  // const orders = await Order.find({
+  //   user: session?.user?.id,
+  // })
+  //   .sort({ createdAt: 'desc' })
+  //   .skip(skipAmount)
+  //   .limit(limit)
+  // const ordersCount = await Order.countDocuments({ user: session?.user?.id })
+
+  // return {
+  //   data: JSON.parse(JSON.stringify(orders)),
+  //   totalPages: Math.ceil(ordersCount / limit),
+  // }
+}

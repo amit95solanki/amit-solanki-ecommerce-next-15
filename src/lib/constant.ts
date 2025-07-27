@@ -1,7 +1,7 @@
 export const API_URL = process.env.NEXT_APP_API_URL;
 export const APP_NAME = process.env.NEXT_APP_NAME || 'Jailaxmi';
 export const APP_DESCRIPTION = 'Jailaxmi is a platform for managing and tracking jail-related information, providing users with access to essential services and resources.';
-export const COMPANY_EMAIL = 'info@jailaxmi.com';
+export const COMPANY_EMAIL = 'amitsolanki3895@gmail.com';
 
 export const PAGE_SIZE = Number(process.env.PAGE_SIZE || 9)
 
@@ -52,7 +52,7 @@ export const AVAILABLE_DELIVERY_DATES = [
 
 export const SERVER_URL=process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:3000/'
 
-export const SENDER_EMAIL=process.env.RESEND_EMAIL || 'jackleelive1989@gmail.com'
+export const SENDER_EMAIL=process.env.RESEND_EMAIL || 'amitsolanki3895@gmail.com'
 
 export const SENDER_NAME = process.env.RESEND_NAME || 'Shopping'
 
